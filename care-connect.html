@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareConnect - Generational Assistance & Support</title>
+  
+  <!-- Bootstrap 5 CSS & FontAwesome Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <!-- Supabase JS Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; font-size: 1.1rem; }
+    .hero-header {
+      background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), 
+                  url('https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;
+      color: white;
+      padding: 90px 0;
+    }
+    .feature-card { transition: transform 0.3s ease, box-shadow 0.3s ease; border: none; cursor: pointer; }
+    .feature-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.12); }
+    .nav-link { font-weight: 600; cursor: pointer; }
+    .page-section { display: none; }
+    .active-section { display: block; }
+    .icon-box {
+      width: 70px;
+      height: 70px;
+      background: #e7f1ff;
+      color: #0d6efd;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      margin-bottom: 20px;
+    }
+  </style>
+
+  <script>
+    // 1. SUPABASE CREDENTIALS SETUP
+    const SUPABASE_URL = 'https://gxedgukjuvrjubvzgcyw.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_Hh3lZwjAkvY9G7cPm_RMZQ_3hrFvJ3t';
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let loggedInUser = null;
+
+    // 2. PAGE NAVIGATION SWITCHER
+    function showSection(sectionId) {
+      document.querySelectorAll('.page-section').forEach(sec => sec.classList.remove('active-section'));
+      const targetSection = document.getElementById(sectionId);
+      if (targetSection) {
+        targetSection.classList.add('active-section');
+      }
+      window.scrollTo(0, 0);
+      if (sectionId === 'board-view') {
+        fetchHelpRequests();
+      }
+      if (sectionId === 'admin-section') {
+        loadAdminData();
+      }
+    }
+
+    // 3. AUTHENTICATION & USER REQUEST HISTORY
+    function toggleAuthMode(mode) {
+      if (mode === 'register') {
+        document.getElementById('login-form-box').classList.add('d-none');
+        document.getElementById('register-form-box').classList.remove('d-none');
+      } else {
+        document.getElementById('register-form-box').classList.add('d-none');
+        document.getElementById('login-form-box').classList.remove('d-none');
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const form = event.target;
+      const email = document.getElementById('login-email').value;
+      loggedInUser = email;
+      
+      document.getElementById('auth-status').innerText = `Logged in as: ${email}`;
+      document.getElementById('login-form-box').classList.add('d-none');
+      document.getElementById('user-dashboard').classList.remove('d-none');
+      
+      fetchUserRequests(email);
+      form.reset();
+    }
+
+    function handleRegister(event) {
+      event.preventDefault();
+      const form = event.target;
+      alert('Registration successful! Please login with your credentials.');
+      toggleAuthMode('login');
+      form.reset();
+    }
+
+    async function fetchUserRequests(email) {
+      const container = document.getElementById('user-requests-container');
+      container.innerHTML = '<p class="text-muted">Loading your past requests...</p>';
+
+      const { data: requests, error } = await supabaseClient
+        .from('help_requests')
+        .select('*')
+        .eq('requester_name', email)
+        .order('created_at', { ascending: false });
+
+      if (error || !requests || requests.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">No previous requests found for your account.</div>';
+        return;
+      }
+
+      container.innerHTML = requests.map(req => `
+        <div class="card mb-3 border-0 shadow-sm">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <h5 class="fw-bold mb-1">${req.title}</h5>
+              <span class="badge ${req.status === 'Open' ? 'bg-warning text-dark' : req.status === 'Claimed' ? 'bg-info text-dark' : 'bg-success'}">${req.status}</span>
+            </div>
+            <p class="mb-1 text-muted">Category: ${req.category} | Location: ${req.location}</p>
+            <small class="text-muted">Posted: ${new Date(req.created_at).toLocaleDateString()}</small>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 4. READ DATA FROM SUPABASE (TASK BOARD)
+    async function fetchHelpRequests() {
+      const container = document.getElementById('requests-container');
+      if (!container) return;
+
+      const { data: requests, error } = await supabaseClient
+        .from('help_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        container.innerHTML = `<div class="alert alert-danger fs-5">Database Connection Error: ${error.message}</div>`;
+        return;
+      }
+
+      if (!requests || requests.length === 0) {
+        container.innerHTML = `<p class="fs-4 text-muted">No open requests currently. Click 'Post Request' to create one!</p>`;
+        return;
+      }
+
+      container.innerHTML = requests.map(req => {
+        const isOpen = req.status === 'Open';
+        return `
+          <div class="col-md-6 col-lg-4">
+            <div class="card shadow-sm border-0 h-100 feature-card">
+              <div class="card-body p-4 d-flex flex-column">
+                <div class="d-flex justify-content-between mb-3">
+                  <span class="badge bg-primary fs-6">${req.category}</span>
+                  <span class="badge ${isOpen ? 'bg-warning text-dark' : req.status === 'Claimed' ? 'bg-info text-dark' : 'bg-success'} fs-6">${req.status}</span>
+                </div>
+                <h3 class="card-title fw-bold fs-3 text-dark">${req.title}</h3>
+                <p class="text-muted mb-1"><strong>Posted by:</strong> ${req.requester_name || 'Anonymous Senior'}</p>
+                <p class="text-muted mb-2 fs-5">📍 <strong>${req.location}</strong></p>
+                <p class="card-text fs-5 flex-grow-1">${req.description || 'No additional details provided.'}</p>
+                ${isOpen ? `
+                  <button onclick="openClaimForm('${req.id}')" class="btn btn-success btn-lg w-100 fw-bold mt-3 fs-5">
+                    <i class="fa-solid fa-hand-holding-heart me-2"></i>Claim Task
+                  </button>
+                ` : `
+                  <div class="alert alert-success mb-0 mt-3 p-2 text-center fs-6 fw-bold"><i class="fa-solid fa-circle-check me-1"></i>Task Status: ${req.status}</div>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 5. POST HELP REQUEST FORM SUBMISSION
+    async function handlePostRequest(event) {
+      event.preventDefault();
+      const form = event.target;
+      const btn = document.getElementById('post-btn');
+      btn.disabled = true;
+
+      const newRequest = {
+        requester_name: document.getElementById('req-name').value,
+        title: document.getElementById('req-title').value,
+        category: document.getElementById('req-category').value,
+        location: document.getElementById('req-location').value,
+        description: document.getElementById('req-desc').value,
+        status: 'Open'
+      };
+
+      const { error } = await supabaseClient.from('help_requests').insert([newRequest]);
+
+      btn.disabled = false;
+      if (error) {
+        alert('Database Error: ' + error.message);
+      } else {
+        alert('Help request posted successfully!');
+        form.reset();
+        showSection('board-view');
+      }
+    }
+
+    // 6. CLAIM TASK SUBMISSION
+    function openClaimForm(requestId) {
+      document.getElementById('selected-request-id').value = requestId;
+      showSection('volunteer-view');
+    }
+
+    async function handleClaimTask(event) {
+      event.preventDefault();
+      const form = event.target;
+      const requestId = document.getElementById('selected-request-id').value;
+
+      const { data: vol, error: volError } = await supabaseClient
+        .from('volunteers')
+        .insert([{
+          full_name: document.getElementById('vol-name').value,
+          phone: document.getElementById('vol-phone').value,
+          skills: document.getElementById('vol-skills').value,
+          status: 'Pending'
+        }])
+        .select()
+        .single();
+
+      if (volError) {
+        alert('Volunteer registration error: ' + volError.message);
+        return;
+      }
+
+      const { error: reqError } = await supabaseClient
+        .from('help_requests')
+        .update({ status: 'Claimed', assigned_volunteer_id: vol.id })
+        .eq('id', requestId);
+
+      if (reqError) {
+        alert('Update error: ' + reqError.message);
+      } else {
+        alert('Task claimed successfully!');
+        form.reset();
+        showSection('board-view');
+      }
+    }
+
+    // 7. DIRECT VOLUNTEER REGISTRATION FROM HOME PAGE MODAL
+    function openVolunteerProcessModal() {
+      document.getElementById('volunteer-form-container').classList.remove('d-none');
+      document.getElementById('volunteer-status-container').classList.add('d-none');
+      const modal = new bootstrap.Modal(document.getElementById('volunteerProcessModal'));
+      modal.show();
+    }
+
+    async function handleDirectVolunteerRegister(event) {
+      event.preventDefault();
+      const form = event.target;
+
+      const volData = {
+        full_name: document.getElementById('direct-vol-name').value,
+        phone: document.getElementById('direct-vol-phone').value,
+        skills: `${document.getElementById('direct-vol-org').value} | ${document.getElementById('direct-vol-skills').value}`,
+        status: 'Pending'
+      };
+
+      const { error } = await supabaseClient.from('volunteers').insert([volData]);
+
+      if (error) {
+        alert("Error submitting registration: " + error.message);
+      } else {
+        form.reset();
+        // Switch view inside modal to show waiting message
+        document.getElementById('volunteer-form-container').classList.add('d-none');
+        document.getElementById('volunteer-status-container').classList.remove('d-none');
+      }
+    }
+
+    // 8. CONTACT FORM SUBMISSION
+    async function handleContactSubmit(event) {
+      event.preventDefault();
+      const form = event.target;
+
+      const contactData = {
+        full_name: document.getElementById('contact-name').value,
+        email: document.getElementById('contact-email').value,
+        message: document.getElementById('contact-msg').value
+      };
+
+      const { error } = await supabaseClient.from('contact_messages').insert([contactData]);
+
+      if (error) {
+        alert('Error sending message: ' + error.message);
+      } else {
+        alert('Your message has been sent to support!');
+        form.reset();
+      }
+    }
+
+    // 9. FEEDBACK FORM SUBMISSION
+    async function handleFeedbackSubmit(event) {
+      event.preventDefault();
+      const form = event.target;
+
+      const feedbackData = {
+        role: document.getElementById('feedback-role').value,
+        comments: document.getElementById('feedback-comments').value
+      };
+
+      const { error } = await supabaseClient.from('feedback').insert([feedbackData]);
+
+      if (error) {
+        alert('Error saving feedback: ' + error.message);
+      } else {
+        alert('Thank you for your valuable feedback!');
+        form.reset();
+        showSection('home-view');
+      }
+    }
+
+    // 10. ADMIN DASHBOARD FUNCTIONS (Requests, Volunteers, Contact, Feedback)
+    async function loadAdminData() {
+      // Fetch Requests
+      const { data: requests } = await supabaseClient.from('help_requests').select('*').order('created_at', { ascending: false });
+      // Fetch Volunteers
+      const { data: volunteers } = await supabaseClient.from('volunteers').select('*').order('created_at', { ascending: false });
+      // Fetch Contact Messages
+      const { data: contacts } = await supabaseClient.from('contact_messages').select('*').order('created_at', { ascending: false });
+      // Fetch Feedback
+      const { data: feedbackList } = await supabaseClient.from('feedback').select('*').order('created_at', { ascending: false });
+
+      // Render Requests Table & Stats
+      const reqTable = document.getElementById('adminTableBody');
+      reqTable.innerHTML = '';
+      let countOpen = 0, countClaimed = 0, countCompleted = 0;
+
+      if (requests) {
+        requests.forEach(req => {
+          if (req.status === 'Open') countOpen++;
+          else if (req.status === 'Claimed') countClaimed++;
+          else if (req.status === 'Completed') countCompleted++;
+
+          let badgeClass = 'bg-warning text-dark';
+          if (req.status === 'Claimed') badgeClass = 'bg-info text-dark';
+          if (req.status === 'Completed') badgeClass = 'bg-success';
+
+          reqTable.innerHTML += `
+            <tr>
+              <td><strong>#${req.id.slice(0, 6)}</strong></td>
+              <td>${req.requester_name || 'Anonymous'}</td>
+              <td><strong>${req.title}</strong><br><small class="text-muted">${req.category}</small></td>
+              <td>${req.location}</td>
+              <td><span class="badge ${badgeClass}">${req.status}</span></td>
+              <td>
+                <div class="btn-group btn-group-sm">
+                  ${req.status === 'Open' ? `<button class="btn btn-outline-primary" onclick="updateAdminStatus('${req.id}', 'Claimed')">Mark Claimed</button>` : ''}
+                  ${req.status === 'Claimed' ? `<button class="btn btn-outline-success" onclick="updateAdminStatus('${req.id}', 'Completed')">Mark Completed</button>` : ''}
+                  <button class="btn btn-outline-danger" onclick="deleteAdminRequest('${req.id}')"><i class="fas fa-trash"></i></button>
+                </div>
+              </td>
+            </tr>
+          `;
+        });
+      }
+
+      document.getElementById('statTotal').innerText = requests ? requests.length : 0;
+      document.getElementById('statOpen').innerText = countOpen;
+      document.getElementById('statClaimed').innerText = countClaimed;
+      document.getElementById('statCompleted').innerText = countCompleted;
+
+      // Render Volunteers Lists (Pending vs Verified)
+      const pendingTable = document.getElementById('pendingVolunteersTable');
+      const verifiedTable = document.getElementById('verifiedVolunteersTable');
+      pendingTable.innerHTML = '';
+      verifiedTable.innerHTML = '';
+
+      if (volunteers) {
+        volunteers.forEach(vol => {
+          if (vol.status === 'Pending') {
+            pendingTable.innerHTML += `
+              <tr>
+                <td><strong>${vol.full_name}</strong></td>
+                <td>${vol.phone}</td>
+                <td><small>${vol.skills || 'N/A'}</small></td>
+                <td><span class="badge bg-warning text-dark">Pending Admin Verification</span></td>
+                <td>
+                  <button class="btn btn-sm btn-success fw-bold me-1" onclick="verifyVolunteer('${vol.id}')"><i class="fas fa-check me-1"></i>Verify</button>
+                  <button class="btn btn-sm btn-outline-danger" onclick="deleteVolunteer('${vol.id}')"><i class="fas fa-trash"></i></button>
+                </td>
+              </tr>
+            `;
+          } else {
+            verifiedTable.innerHTML += `
+              <tr>
+                <td><strong>${vol.full_name}</strong></td>
+                <td>${vol.phone}</td>
+                <td><small>${vol.skills || 'N/A'}</small></td>
+                <td><span class="badge bg-success">Verified</span></td>
+                <td>
+                  <button class="btn btn-sm btn-outline-danger" onclick="deleteVolunteer('${vol.id}')"><i class="fas fa-trash"></i></button>
+                </td>
+              </tr>
+            `;
+          }
+        });
+      }
+      if (pendingTable.innerHTML === '') pendingTable.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No pending volunteer applications.</td></tr>`;
+      if (verifiedTable.innerHTML === '') verifiedTable.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No verified volunteers yet.</td></tr>`;
+
+      // Render Contact Us Messages Table
+      const contactTable = document.getElementById('adminContactTable');
+      contactTable.innerHTML = '';
+      if (contacts) {
+        contacts.forEach(c => {
+          contactTable.innerHTML += `
+            <tr>
+              <td><strong>${c.full_name}</strong><br><small class="text-muted">${c.email}</small></td>
+              <td>${c.message}</td>
+              <td><small class="text-muted">${new Date(c.created_at).toLocaleDateString()}</small></td>
+            </tr>
+          `;
+        });
+      }
+      if (contactTable.innerHTML === '') contactTable.innerHTML = `<tr><td colspan="3" class="text-center text-muted">No contact messages received.</td></tr>`;
+
+      // Render Feedback Table
+      const feedbackTable = document.getElementById('adminFeedbackTable');
+      feedbackTable.innerHTML = '';
+      if (feedbackList) {
+        feedbackList.forEach(f => {
+          feedbackTable.innerHTML += `
+            <tr>
+              <td><span class="badge bg-secondary">${f.role}</span></td>
+              <td>${f.comments}</td>
+              <td><small class="text-muted">${new Date(f.created_at).toLocaleDateString()}</small></td>
+            </tr>
+          `;
+        });
+      }
+      if (feedbackTable.innerHTML === '') feedbackTable.innerHTML = `<tr><td colspan="3" class="text-center text-muted">No feedback received.</td></tr>`;
+    }
+
+    async function updateAdminStatus(id, newStatus) {
+      const { error } = await supabaseClient.from('help_requests').update({ status: newStatus }).eq('id', id);
+      if (error) alert("Failed to update status: " + error.message);
+      else loadAdminData();
+    }
+
+    async function deleteAdminRequest(id) {
+      if (!confirm("Are you sure you want to delete this request?")) return;
+      const { error } = await supabaseClient.from('help_requests').delete().eq('id', id);
+      if (error) alert("Failed to delete request: " + error.message);
+      else loadAdminData();
+    }
+
+    async function verifyVolunteer(id) {
+      const { error } = await supabaseClient.from('volunteers').update({ status: 'Verified' }).eq('id', id);
+      if (error) alert("Failed to verify volunteer: " + error.message);
+      else loadAdminData();
+    }
+
+    async function deleteVolunteer(id) {
+      if (!confirm("Are you sure you want to remove this volunteer?")) return;
+      const { error } = await supabaseClient.from('volunteers').delete().eq('id', id);
+      if (error) alert("Failed to delete volunteer: " + error.message);
+      else loadAdminData();
+    }
+
+    // 11. UNIQUENESS MODAL EXAMPLES
+    function showExampleModal(type) {
+      const modalTitle = document.getElementById('exampleModalTitle');
+      const modalBody = document.getElementById('exampleModalBody');
+
+      if (type === 'verified') {
+        modalTitle.innerText = "Verified Volunteers Directory (10 Examples)";
+        modalBody.innerHTML = `
+          <p class="text-muted mb-3">All volunteers undergo background checks and university ID verification before taking tasks.</p>
+          <div class="list-group">
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">1. Aarav Sharma (Age 21)</h6><small class="text-muted">COEP Tech University | Phone: +91 98230 11223</small><br><small class="text-primary">Skills: Wi-Fi & Smartphone Troubleshooting</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">2. Ananya Deshmukh (Age 20)</h6><small class="text-muted">MMCC Pune (BBA-CA) | Phone: +91 97654 33210</small><br><small class="text-primary">Skills: Grocery Carrying, Heavy Lifting</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">3. Rohan Mehta (Age 22)</h6><small class="text-muted">Fergusson College | Phone: +91 98901 44556</small><br><small class="text-primary">Skills: Companion Reading, Prescription Pickup</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">4. Sneha Patil (Age 19)</h6><small class="text-muted">SPPU Computer Science | Phone: +91 91234 56789</small><br><small class="text-primary">Skills: Smart TV Setup, WhatsApp Training</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">5. Vikram Joshi (Age 23)</h6><small class="text-muted">MIT World Peace University | Phone: +91 99887 11223</small><br><small class="text-primary">Skills: Garden Maintenance, Light Repairs</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">6. Priyanka Kulkarni (Age 20)</h6><small class="text-muted">Symbiosis International | Phone: +91 98450 67890</small><br><small class="text-primary">Skills: Medical Appointment Escort</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">7. Aditya Rao (Age 21)</h6><small class="text-muted">Modern College Shivajinagar | Phone: +91 97112 33445</small><br><small class="text-primary">Skills: Heavy Parcel Delivery, Furniture Assembly</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">8. Pooja Shinde (Age 22)</h6><small class="text-muted">Cummins College | Phone: +91 98334 55667</small><br><small class="text-primary">Skills: Tablet & Laptop Setup</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">9. Siddharth Verma (Age 20)</h6><small class="text-muted">BMCC College, Pune | Phone: +91 96543 21098</small><br><small class="text-primary">Skills: Neighborhood Errand Running</small></div>
+            <div class="list-group-item mb-2"><h6 class="fw-bold mb-0">10. Ishika Nair (Age 19)</h6><small class="text-muted">Ness Wadia College | Phone: +91 95432 10987</small><br><small class="text-primary">Skills: Story Reading, Evening Walk Escort</small></div>
+          </div>
+        `;
+      } else if (type === 'realtime') {
+        modalTitle.innerText = "Real-Time Task Tracking System (10 Live Examples)";
+        modalBody.innerHTML = `
+          <p class="text-muted mb-3">Tasks transition dynamically: <strong>Open $\rightarrow$ Claimed $\rightarrow$ Completed</strong>.</p>
+          <ul class="list-group">
+            <li class="list-group-item"><strong>1. Wi-Fi Router Setup</strong>: Open $\rightarrow$ Claimed by Aarav $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>2. Weekly Grocery Lifting</strong>: Open $\rightarrow$ Claimed by Ananya $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>3. Medicine Pickup</strong>: Open $\rightarrow$ Claimed by Rohan $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>4. Smart TV Hotspot Setup</strong>: Open $\rightarrow$ Claimed by Sneha $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>5. Garden Trimming</strong>: Open $\rightarrow$ Claimed by Vikram $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>6. Escort to Eye Clinic</strong>: Open $\rightarrow$ Claimed by Priyanka $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>7. Unpacking Storage Boxes</strong>: Open $\rightarrow$ Claimed by Aditya $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>8. E-Book App Configuration</strong>: Open $\rightarrow$ Claimed by Pooja $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>9. Bank Passbook Printing</strong>: Open $\rightarrow$ Claimed by Siddharth $\rightarrow$ Completed</li>
+            <li class="list-group-item"><strong>10. Evening Park Walk</strong>: Open $\rightarrow$ Claimed by Ishika $\rightarrow$ Completed</li>
+          </ul>
+        `;
+      } else if (type === 'accessibility') {
+        modalTitle.innerText = "Senior Accessible Design Case Studies (10 Examples)";
+        modalBody.innerHTML = `
+          <ul class="list-group">
+            <li class="list-group-item">1. Family Proxy Posting Mode for seniors without smartphones.</li>
+            <li class="list-group-item">2. High contrast UI and large typography (min 1.1rem).</li>
+            <li class="list-group-item">3. One-touch task posting with a concise 4-field form.</li>
+            <li class="list-group-item">4. Screen reader compatibility (TalkBack & VoiceOver).</li>
+            <li class="list-group-item">5. Large icon navigation alongside text labels.</li>
+            <li class="list-group-item">6. Simplified status badges (Yellow, Blue, Green).</li>
+            <li class="list-group-item">7. Voice-to-text input support for descriptions.</li>
+            <li class="list-group-item">8. Emergency direct phone contact options.</li>
+            <li class="list-group-item">9. Single-screen account authentication switching.</li>
+            <li class="list-group-item">10. Zero-ad, distraction-free environment.</li>
+          </ul>
+        `;
+      }
+
+      const bsModal = new bootstrap.Modal(document.getElementById('exampleModal'));
+      bsModal.show();
+    }
+  </script>
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top py-3 shadow">
+    <div class="container">
+      <a class="navbar-brand fw-bold fs-3 text-warning" href="#" onclick="showSection('home-view')">
+        <i class="fa-solid fa-hand-holding-heart me-2"></i>CareConnect
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav ms-auto gap-2">
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('home-view')"><i class="fa-solid fa-house me-1"></i>Home</a></li>
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('board-view')"><i class="fa-solid fa-list-check me-1"></i>Task Board</a></li>
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('about-view')"><i class="fa-solid fa-users me-1"></i>About Us</a></li>
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('uniqueness-view')"><i class="fa-solid fa-star me-1"></i>Uniqueness</a></li>
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('contact-view')"><i class="fa-solid fa-envelope me-1"></i>Contact Us</a></li>
+          <li class="nav-item"><a class="nav-link text-white" onclick="showSection('feedback-view')"><i class="fa-solid fa-comment-dots me-1"></i>Feedback</a></li>
+          <li class="nav-item"><a class="nav-link text-warning fw-bold" onclick="showSection('admin-section')"><i class="fa-solid fa-user-shield me-1"></i>Admin Dashboard</a></li>
+        </ul>
+        <div class="ms-3 d-flex gap-2">
+          <button class="btn btn-outline-light fw-bold" onclick="showSection('auth-view')"><i class="fa-solid fa-right-to-bracket me-1"></i>Login / Register</button>
+          <button class="btn btn-warning fw-bold text-dark" onclick="showSection('post-view')"><i class="fa-solid fa-plus me-1"></i>Post Request</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HOME PAGE -->
+  <section id="home-view" class="page-section active-section">
+    <div class="hero-header text-center">
+      <div class="container">
+        <h1 class="display-3 fw-bold mb-3">Empowering Seniors. Inspiring Youth.</h1>
+        <p class="fs-3 mb-4">Connecting local elderly citizens with compassionate youth volunteers for non-medical everyday help.</p>
+        <div class="d-flex justify-content-center gap-3">
+          <button class="btn btn-warning btn-lg fw-bold px-4 fs-4" onclick="showSection('post-view')"><i class="fa-solid fa-hand-sparkles me-2"></i>Request Help</button>
+          <button class="btn btn-success btn-lg fw-bold px-4 fs-4" onclick="openVolunteerProcessModal()"><i class="fa-solid fa-heart me-2"></i>Become a Volunteer</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container my-5">
+      <h2 class="fw-bold text-center mb-5 text-primary">How Volunteers Make a Difference</h2>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm border-0 feature-card">
+            <img src="https://images.unsplash.com/photo-1581579438747-1dc8d17bbce4?auto=format&fit=crop&w=600&q=80" class="card-img-top" alt="Tech assistance">
+            <div class="card-body p-4">
+              <h3 class="fw-bold"><i class="fa-solid fa-laptop-code text-primary me-2"></i>Tech Support</h3>
+              <p class="text-muted">Helping seniors navigate smartphones, tablet apps, video calls, and setting up online services.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm border-0 feature-card">
+            <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=600&q=80" class="card-img-top" alt="Errands">
+            <div class="card-body p-4">
+              <h3 class="fw-bold"><i class="fa-solid fa-basket-shopping text-success me-2"></i>Groceries & Errands</h3>
+              <p class="text-muted">Youth volunteers carry heavy groceries, pick up prescriptions, and assist with yard maintenance.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm border-0 feature-card">
+            <img src="https://images.unsplash.com/photo-1516307365426-bea591f05011?auto=format&fit=crop&w=600&q=80" class="card-img-top" alt="Walks">
+            <div class="card-body p-4">
+              <h3 class="fw-bold"><i class="fa-solid fa-person-walking text-warning me-2"></i>Companion Walks</h3>
+              <p class="text-muted">Fostering intergenerational friendships through neighborhood walks, reading, and shared conversations.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TASK BOARD -->
+  <section id="board-view" class="page-section">
+    <div class="container my-5">
+      <div class="p-4 mb-4 bg-primary text-white rounded-3 shadow">
+        <h1 class="fw-bold"><i class="fa-solid fa-clipboard-list me-2"></i>Active Community Help Requests</h1>
+        <p class="fs-5 mb-0">Select an open request to assist a senior neighbor in your community.</p>
+      </div>
+      <div id="requests-container" class="row g-4">
+        <p class="fs-4">Loading active requests from database...</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOGIN / REGISTER -->
+  <section id="auth-view" class="page-section">
+    <div class="container my-5" style="max-width: 600px;">
+      <div id="login-form-box" class="bg-white p-4 p-md-5 rounded-3 shadow border">
+        <h2 class="fw-bold text-center text-primary mb-4"><i class="fa-solid fa-user-circle me-2"></i>Portal Login</h2>
+        <form onsubmit="handleLogin(event)">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Email Address / User ID</label>
+            <input type="email" id="login-email" class="form-control form-control-lg" placeholder="name@example.com" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Password</label>
+            <input type="password" class="form-control form-control-lg" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold mb-3">Login</button>
+          <div class="text-center">
+            <span class="text-muted">Don't have an account? </span>
+            <a href="#" class="fw-bold text-primary" onclick="toggleAuthMode('register')">Register Now</a>
+          </div>
+        </form>
+      </div>
+
+      <div id="register-form-box" class="bg-white p-4 p-md-5 rounded-3 shadow border d-none">
+        <h2 class="fw-bold text-center text-success mb-4"><i class="fa-solid fa-user-plus me-2"></i>Create Account</h2>
+        <form onsubmit="handleRegister(event)">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Full Name</label>
+            <input type="text" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Email Address</label>
+            <input type="email" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Password</label>
+            <input type="password" class="form-control form-control-lg" required>
+          </div>
+          <button type="submit" class="btn btn-success btn-lg w-100 fw-bold mb-3">Register</button>
+          <div class="text-center">
+            <span class="text-muted">Already registered? </span>
+            <a href="#" class="fw-bold text-primary" onclick="toggleAuthMode('login')">Login Here</a>
+          </div>
+        </form>
+      </div>
+
+      <div id="user-dashboard" class="bg-white p-4 p-md-5 rounded-3 shadow border d-none mt-4">
+        <h3 id="auth-status" class="fw-bold text-primary mb-3"></h3>
+        <hr>
+        <h4 class="fw-bold mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Your Posted Requests</h4>
+        <div id="user-requests-container"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- POST REQUEST FORM -->
+  <section id="post-view" class="page-section">
+    <div class="container my-5" style="max-width: 700px;">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow border">
+        <h2 class="fw-bold mb-4 text-primary"><i class="fa-solid fa-pen-to-square me-2"></i>Post Assistance Need</h2>
+        <form onsubmit="handlePostRequest(event)">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Your Name / Senior Name</label>
+            <input type="text" id="req-name" class="form-control form-control-lg" placeholder="e.g., Mrs. Sharma" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Task Title</label>
+            <input type="text" id="req-title" class="form-control form-control-lg" placeholder="e.g., Help carrying grocery bags upstairs" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Category</label>
+            <select id="req-category" class="form-select form-select-lg" required>
+              <option value="Groceries & Errands">Groceries & Errands</option>
+              <option value="Tech Support">Tech Support</option>
+              <option value="Yard Work">Yard Work</option>
+              <option value="Companion Walk">Companion Walk</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Location / Neighborhood</label>
+            <input type="text" id="req-location" class="form-control form-control-lg" placeholder="e.g., Deccan, Pune" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Details & Preferred Time</label>
+            <textarea id="req-desc" class="form-control form-control-lg" rows="4" placeholder="Add specific requirements..."></textarea>
+          </div>
+          <button type="submit" id="post-btn" class="btn btn-warning btn-lg w-100 fw-bold fs-4"><i class="fa-solid fa-paper-plane me-2"></i>Submit Request</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT US -->
+  <section id="about-view" class="page-section">
+    <div class="container my-5">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80" class="img-fluid rounded-3 shadow" alt="About Us">
+        </div>
+        <div class="col-lg-6">
+          <h1 class="fw-bold text-primary mb-3">Bridging Generations Through Kindness</h1>
+          <p class="fs-5 text-muted">CareConnect was built to solve senior isolation while empowering youth to engage in meaningful community service.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- UNIQUENESS -->
+  <section id="uniqueness-view" class="page-section">
+    <div class="container my-5">
+      <h1 class="fw-bold text-center text-primary mb-2">Why CareConnect Stands Out</h1>
+      <p class="text-center text-muted fs-5 mb-5">Click on any card below to read real community examples!</p>
+      
+      <div class="row g-4">
+        <div class="col-md-4 text-center">
+          <div class="p-4 bg-white rounded-3 shadow-sm border h-100 feature-card" onclick="showExampleModal('verified')">
+            <div class="icon-box mx-auto"><i class="fa-solid fa-shield-halved"></i></div>
+            <h3 class="fw-bold">Verified Volunteers</h3>
+            <p class="text-muted mb-3">All student volunteers are verified via institutional review.</p>
+            <span class="btn btn-outline-primary btn-sm fw-bold">View 10 Examples</span>
+          </div>
+        </div>
+        <div class="col-md-4 text-center">
+          <div class="p-4 bg-white rounded-3 shadow-sm border h-100 feature-card" onclick="showExampleModal('realtime')">
+            <div class="icon-box mx-auto" style="background:#e8f5e9; color:#198754;"><i class="fa-solid fa-bolt"></i></div>
+            <h3 class="fw-bold">Real-time Task Tracking</h3>
+            <p class="text-muted mb-3">Instant status updates from Open to Claimed and Completed.</p>
+            <span class="btn btn-outline-success btn-sm fw-bold">View 10 Examples</span>
+          </div>
+        </div>
+        <div class="col-md-4 text-center">
+          <div class="p-4 bg-white rounded-3 shadow-sm border h-100 feature-card" onclick="showExampleModal('accessibility')">
+            <div class="icon-box mx-auto" style="background:#fff8e1; color:#ffc107;"><i class="fa-solid fa-universal-access"></i></div>
+            <h3 class="fw-bold">Senior Accessible Design</h3>
+            <p class="text-muted mb-3">High contrast, large fonts, and family member submission support.</p>
+            <span class="btn btn-outline-warning text-dark btn-sm fw-bold">View 10 Examples</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT US -->
+  <section id="contact-view" class="page-section">
+    <div class="container my-5" style="max-width: 700px;">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow border">
+        <h2 class="fw-bold text-primary mb-4"><i class="fa-solid fa-headset me-2"></i>Contact Support Team</h2>
+        <form onsubmit="handleContactSubmit(event)">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Full Name</label>
+            <input type="text" id="contact-name" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Email Address</label>
+            <input type="email" id="contact-email" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Message</label>
+            <textarea id="contact-msg" class="form-control form-control-lg" rows="4" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Send Message</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEEDBACK -->
+  <section id="feedback-view" class="page-section">
+    <div class="container my-5" style="max-width: 700px;">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow border">
+        <h2 class="fw-bold text-success mb-4"><i class="fa-solid fa-star text-warning me-2"></i>Share Your Feedback</h2>
+        <form onsubmit="handleFeedbackSubmit(event)">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Your Role</label>
+            <select id="feedback-role" class="form-select form-select-lg">
+              <option>Senior Citizen / Family Member</option>
+              <option>Youth Volunteer</option>
+              <option>Community Supporter</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Feedback Comments</label>
+            <textarea id="feedback-comments" class="form-control form-control-lg" rows="4" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">Submit Feedback</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN DASHBOARD SECTION -->
+  <section id="admin-section" class="page-section">
+    <div class="container my-5">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold text-primary"><i class="fas fa-user-shield me-2"></i>Admin Dashboard</h2>
+        <button class="btn btn-outline-dark fw-bold" onclick="loadAdminData()"><i class="fas fa-sync-alt me-1"></i> Refresh Data</button>
+      </div>
+
+      <!-- Stat Summary Cards -->
+      <div class="row g-3 mb-4">
+        <div class="col-md-3">
+          <div class="p-3 bg-white shadow-sm rounded border-start border-4 border-primary">
+            <small class="text-muted text-uppercase fw-bold">Total Requests</small>
+            <h3 id="statTotal" class="fw-bold mb-0">0</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="p-3 bg-white shadow-sm rounded border-start border-4 border-warning">
+            <small class="text-muted text-uppercase fw-bold">Open Requests</small>
+            <h3 id="statOpen" class="fw-bold text-warning mb-0">0</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="p-3 bg-white shadow-sm rounded border-start border-4 border-info">
+            <small class="text-muted text-uppercase fw-bold">Claimed Requests</small>
+            <h3 id="statClaimed" class="fw-bold text-info mb-0">0</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="p-3 bg-white shadow-sm rounded border-start border-4 border-success">
+            <small class="text-muted text-uppercase fw-bold">Completed Tasks</small>
+            <h3 id="statCompleted" class="fw-bold text-success mb-0">0</h3>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. Senior Requests Oversight Table -->
+      <div class="card shadow-sm border-0 mb-5">
+        <div class="card-header bg-dark text-white">
+          <h5 class="mb-0"><i class="fas fa-list-check me-2"></i>Senior Citizens Help Requests</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>ID</th>
+                  <th>Senior Citizen</th>
+                  <th>Task Details</th>
+                  <th>Location</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminTableBody">
+                <!-- Dynamic rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Volunteer Applications Management (Pending vs Verified) -->
+      <div class="row g-4 mb-5">
+        <div class="col-lg-6">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-warning text-dark fw-bold">
+              <i class="fas fa-user-clock me-2"></i>Pending Volunteer Applications (Not Verified)
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Name</th>
+                      <th>Phone</th>
+                      <th>Skills/Org</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pendingVolunteersTable">
+                    <!-- Dynamic pending volunteers -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-success text-white fw-bold">
+              <i class="fas fa-user-check me-2"></i>Verified Volunteers List
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Name</th>
+                      <th>Phone</th>
+                      <th>Skills/Org</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="verifiedVolunteersTable">
+                    <!-- Dynamic verified volunteers -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Contact Us Messages & Feedback Lists -->
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-primary text-white fw-bold">
+              <i class="fas fa-envelope me-2"></i>Contact Us Queries
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Sender</th>
+                      <th>Message</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminContactTable">
+                    <!-- Dynamic Contact Messages -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-info text-dark fw-bold">
+              <i class="fas fa-comments me-2"></i>User Feedback List
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Role</th>
+                      <th>Comments</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminFeedbackTable">
+                    <!-- Dynamic Feedback -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- VOLUNTEER CLAIM FORM -->
+  <section id="volunteer-view" class="page-section">
+    <div class="container my-5" style="max-width: 600px;">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow border">
+        <h2 class="fw-bold text-success mb-3"><i class="fa-solid fa-user-check me-2"></i>Claim Task</h2>
+        <form onsubmit="handleClaimTask(event)">
+          <input type="hidden" id="selected-request-id">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Your Full Name</label>
+            <input type="text" id="vol-name" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Phone Number</label>
+            <input type="tel" id="vol-phone" class="form-control form-control-lg" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Skills / Student Bio</label>
+            <input type="text" id="vol-skills" class="form-control form-control-lg">
+          </div>
+          <button type="submit" class="btn btn-success btn-lg w-100 fw-bold fs-4">Confirm & Claim Task</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOLUNTEER PROCESS & REGISTRATION MODAL -->
+  <div class="modal fade" id="volunteerProcessModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white">
+          <h4 class="modal-title fw-bold"><i class="fa-solid fa-hand-holding-heart me-2"></i>Become a Verified Volunteer</h4>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          
+          <h5 class="fw-bold text-center text-primary mb-3">How the Volunteer Process Works</h5>
+          <div class="row text-center mb-4 g-3">
+            <div class="col-md-4">
+              <div class="p-3 bg-light rounded border h-100">
+                <span class="badge bg-success rounded-circle mb-2 fs-5">1</span>
+                <h6 class="fw-bold">Fill Application</h6>
+                <small class="text-muted">Register your details, phone number, and student/work ID.</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="p-3 bg-light rounded border h-100">
+                <span class="badge bg-warning text-dark rounded-circle mb-2 fs-5">2</span>
+                <h6 class="fw-bold">Fast Verification</h6>
+                <small class="text-muted">Our admin team conducts quick identity verification for safety.</small>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="p-3 bg-light rounded border h-100">
+                <span class="badge bg-primary rounded-circle mb-2 fs-5">3</span>
+                <h6 class="fw-bold">Start Helping</h6>
+                <small class="text-muted">Browse the Task Board & claim tasks requested by local seniors.</small>
+              </div>
+            </div>
+          </div>
+
+          <hr>
+
+          <!-- FORM CONTAINER -->
+          <div id="volunteer-form-container">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-user-plus me-2 text-success"></i>Volunteer Registration Form</h5>
+            <form onsubmit="handleDirectVolunteerRegister(event)">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Full Name</label>
+                  <input type="text" id="direct-vol-name" class="form-control form-control-lg" placeholder="e.g., Aarav Sharma" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Phone Number</label>
+                  <input type="tel" id="direct-vol-phone" class="form-control form-control-lg" placeholder="+91 98230 11223" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label fw-bold">College / Institution / Organization</label>
+                  <input type="text" id="direct-vol-org" class="form-control form-control-lg" placeholder="e.g., MMCC Pune / Working Professional" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label fw-bold">Your Assistance Skills</label>
+                  <input type="text" id="direct-vol-skills" class="form-control form-control-lg" placeholder="e.g., Smartphone Help, Grocery Carrying, Escort Walks" required>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-success btn-lg w-100 fw-bold mt-4">
+                <i class="fa-solid fa-paper-plane me-2"></i>Submit Application
+              </button>
+            </form>
+          </div>
+
+          <!-- WAITING FOR VERIFICATION STATUS CONTAINER -->
+          <div id="volunteer-status-container" class="d-none text-center py-4">
+            <div class="alert alert-warning p-4 shadow-sm border">
+              <h3 class="fw-bold text-dark mb-3"><i class="fa-solid fa-hourglass-half text-warning me-2"></i>Application Submitted!</h3>
+              <p class="fs-5 text-muted mb-0">Your application is successfully registered. <strong>Status: Waiting for being verified through admin.</strong> Once verified by our team, you will be fully activated to help senior citizens in your neighborhood!</p>
+            </div>
+            <button class="btn btn-outline-secondary btn-lg fw-bold mt-3" data-bs-dismiss="modal">Close Window</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Uniqueness Example Modal -->
+  <div class="modal fade" id="exampleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title fw-bold" id="exampleModalTitle">Example</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body fs-5" id="exampleModalBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="bg-dark text-white py-4 mt-auto">
+    <div class="container text-center">
+      <p class="mb-0 fw-bold">🤝 CareConnect &copy; 2026. Empowering Communities Everywhere.</p>
+    </div>
+  </footer>
+
+  <!-- Bootstrap Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
